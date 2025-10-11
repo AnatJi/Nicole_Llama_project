@@ -1,0 +1,14 @@
+FROM llama3.1:8b-instruct-q4_K_M
+
+SYSTEM """{{ .System }}"""
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER num_ctx 32000
+
+
+
+
+
+
+

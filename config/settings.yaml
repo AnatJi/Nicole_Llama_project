@@ -1,0 +1,14 @@
+model:
+  name: "nicole-llama"
+  temperature: 0.7
+  max_tokens: 150
+  top_p: 0.9
+
+memory:
+  max_history_messages: 50
+  save_interval: 10
+  long_term_memory: true
+
+stream:
+  context_duration_hours: 3
+  auto_save: true
