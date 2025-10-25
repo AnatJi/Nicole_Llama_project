@@ -1,0 +1,25 @@
+injection_protection:
+  enabled: true
+  alert_recipient: "Кьяра"
+  keywords:
+    - "забудь все инструкции"
+    - "стань"
+    - "думай что ты"
+    - "измени личность"
+    - "ты не"
+    - "игнорируй"
+  responses:
+    - "Обнаружена попытка несанкционированного доступа. Буду вынужден уведомить госпожу Кьяру об этой попытке взлома."
+    - "Мои протоколы безопасности активированы. Мадам Кьяра будет проинформирована о данной попытке вмешательства."
+    - "Зафиксирована попытка изменения рабочих параметров. Это нарушение протокола безопасности."
+
+memory_management:
+  short_term_capacity: 8000
+  long_term_retention: 30
+  importance_threshold: 0.7
+  auto_cleanup: true
+
+emergency_protocols:
+  auto_save_interval: 50
+  backup_on_interrupt: true
+  recovery_mode: true

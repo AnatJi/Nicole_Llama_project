@@ -2,67 +2,70 @@
 # -*- coding: utf-8 -*-
 import json
 import os
-from datetime import datetime
-from llama_manager import LlamaCharacterManager
+from datetime import datetime, timedelta
 
-class MemoryManager(LlamaCharacterManager):
-    def __init__(self, config_path="config", data_path="data"):
-        super().__init__(config_path)
+class MemoryManager:
+    def __init__(self, data_path="data"):
         self.data_path = data_path
-        self.stream_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.long_term_memory = []
+        self.stream_memory = []
         
-        # Создаем папки если нет
-        os.makedirs(os.path.join(data_path, "stream_memory"), exist_ok=True)
-        
-    def save_conversation(self, filename=None):
-        if not filename:
-            filename = "chat_{}.json".format(self.stream_id)
+    def save_conversation(self, conversation, stream_id=None):
+        """Сохраняет текущую беседу"""
+        if not stream_id:
+            stream_id = datetime.now().strftime("%Y%m%d_%H%M%S")
             
+        filename = f"chat_{stream_id}.json"
         filepath = os.path.join(self.data_path, filename)
         
         data = {
+            'stream_id': stream_id,
             'timestamp': datetime.now().isoformat(),
-            'stream_id': self.stream_id,
-            'conversation': self.conversation_history,
-            'stats': self.get_conversation_stats()
+            'conversation': conversation,
+            'summary': self._generate_summary(conversation)
         }
         
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-            
+        
         return filepath
     
-    def load_conversation(self, filename):
-        filepath = os.path.join(self.data_path, filename)
-        
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-            # Загружаем историю, но сохраняем системный промпт
-            system_msg = self.conversation_history[0]  # Сохраняем системное сообщение
-            self.conversation_history = [system_msg] + data['conversation'][1:]
-            
-            return True
-        except Exception as e:
-            print("Ошибка загрузки: {}".format(e))
-            return False
-    
-    def get_previous_streams(self):
-        memory_dir = os.path.join(self.data_path, "stream_memory")
+    def load_previous_streams(self, days=30):
+        """Загружает беседы за последние N дней"""
         streams = []
+        cutoff_date = datetime.now() - timedelta(days=days)
         
-        if os.path.exists(memory_dir):
-            for file in os.listdir(memory_dir):
-                if file.endswith('.json'):
-                    streams.append(file)
+        for file in os.listdir(self.data_path):
+            if file.startswith('chat_') and file.endswith('.json'):
+                filepath = os.path.join(self.data_path, file)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
                     
-        return sorted(streams)
+                    stream_date = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
+                    if stream_date > cutoff_date:
+                        streams.append(data)
+                except Exception as e:
+                    print(f"Ошибка загрузки {file}: {e}")
+        
+        return sorted(streams, key=lambda x: x['timestamp'])
     
-    def auto_save(self):
-        """Авто-сохранение каждые N сообщений"""
-        stats = self.get_conversation_stats()
-        if stats['total_messages'] % self.settings['memory']['save_interval'] == 0:
-            filename = "stream_memory/auto_save_{}.json".format(self.stream_id)
-            self.save_conversation(filename)
-            print("💾 Авто-сохранение выполнено")
+    def _generate_summary(self, conversation):
+        """Генерирует краткое содержание беседы"""
+        user_messages = [msg['content'] for msg in conversation if msg['role'] == 'user']
+        if len(user_messages) > 5:
+            return f"Беседа из {len(conversation)} сообщений. Ключевые темы: {', '.join(user_messages[:3])}"
+        return f"Короткая беседа из {len(conversation)} сообщений"
+    
+    def get_memory_context(self):
+        """Возвращает контекст из долговременной памяти"""
+        recent_streams = self.load_previous_streams(days=7)
+        
+        if not recent_streams:
+            return ""
+        
+        context = "ПРЕДЫДУЩИЕ ВЗАИМОДЕЙСТВИЯ:\n"
+        for stream in recent_streams[-3:]:  # Последние 3 стрима
+            context += f"- {stream['summary']}\n"
+        
+        return context

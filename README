@@ -1,0 +1,19 @@
+# Nicole - Система чат-ассистента
+
+Робот-дворецкий и телохранитель Кьяры, функционирующий в режиме чат-ассистента.
+
+## Установка
+
+```bash
+# Клонировать проект
+git clone <repository>
+cd nicole_kyara_project
+
+# Установить зависимости
+pip install -r requirements.txt
+
+# Скачать модель Ollama
+ollama pull llama3.1:8b-instruct-q4_K_M
+
+# Создать кастомную модель
+ollama create nicole-kyara -f Nicole-Kyara.Modelfile

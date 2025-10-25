@@ -4,55 +4,42 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-from memory_manager import MemoryManager
+from kyara_manager import KyaraCharacterManager
 
 def main():
-    print("🎮 СТРИМ-ЧАТ С НИКОЛЬ (LLaMA 3.1)")
+    print("🤖 СИСТЕМА НИКОЛЬ - АКТИВАЦИЯ")
     print("=" * 50)
+    print("🔒 Протоколы безопасности: АКТИВНЫ")
+    print("💾 Долговременная память: АКТИВНА") 
+    print("🚨 Аварийное сохранение: АКТИВНО")
+    print("👑 Госпожа: Кьяра")
+    print("\nДля выхода: 'выход', Статистика: 'стата'\n")
     
-    manager = MemoryManager()
-    
-    # Показываем загруженную конфигурацию
-    character = manager.config_loader.load_character()
-    print("Персонаж: {} - {}".format(character['name'], character['profession']))
-    print("Контекст: 32K токенов (~3 часа стрима)")
-    print("🔒 Защита от промпт-инъекций: АКТИВНА")
-    print("Для выхода: 'выход', Статистика: 'стата'\n")
+    manager = KyaraCharacterManager()
     
     while True:
         try:
-            user_input = input("Зритель: ").strip()
+            user_input = input("➤ ").strip()
             
             if user_input.lower() in ['выход', 'exit', 'quit']:
-                # Сохраняем финальную версию
-                manager.save_conversation()
-                print("💾 Диалог сохранен. До свидания!")
+                print("💾 Сохранение данных...")
                 break
                 
             elif user_input.lower() == 'стата':
                 stats = manager.get_conversation_stats()
-                print("📊 Статистика:")
-                print(" - Сообщений: {}".format(stats['total_messages']))
-                print(" - Символов: {}".format(stats['total_characters']))
-                print(" - Зритель: {}".format(stats['user_messages']))
-                print(" - Николь: {}".format(stats['assistant_messages']))
+                print(f"📊 Сообщений: {stats['total_messages']}")
+                print(f"🧠 Память: {stats['long_term_memory_entries']} записей")
+                print(f"💾 Использование: {stats['memory_usage']}")
                 continue
-                
-            # Авто-сохранение
-            manager.auto_save()
             
-            # Генерация ответа
             response = manager.chat(user_input)
-            print("Николь: {}".format(response))
-            print()  # Разделитель
+            print(f"Николь: {response}\n")
             
         except KeyboardInterrupt:
-            print("\n💾 Сохраняю диалог...")
-            manager.save_conversation()
-            print("До свидания!")
+            print("\n🚨 Аварийное завершение...")
             break
         except Exception as e:
-            print("Ошибка: {}".format(e))
+            print(f"❌ Ошибка: {e}")
 
 if __name__ == "__main__":
     main()
