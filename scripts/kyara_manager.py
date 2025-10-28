@@ -4,24 +4,50 @@ import requests
 import json
 import os
 import random
+import logging
 from datetime import datetime
-from config_loader import ConfigLoader
-from security_system import SecuritySystem
-from context_optimizer import ContextOptimizer
-from emergency_save import EmergencySave
+from pathlib import Path
+
+# Добавляем возможность импорта из соседних модулей
+try:
+    from config_loader import ConfigLoader
+    from security_system import SecuritySystem
+    from context_optimizer import ContextOptimizer
+    from emergency_save import EmergencySave
+except ImportError:
+    # Альтернативный способ импорта для разных ОС
+    import sys
+    scripts_dir = Path(__file__).parent
+    sys.path.append(str(scripts_dir))
+    from config_loader import ConfigLoader
+    from security_system import SecuritySystem
+    from context_optimizer import ContextOptimizer
+    from emergency_save import EmergencySave
 
 class KyaraCharacterManager:
     def __init__(self, config_path="config", data_path="data"):
-        self.config_loader = ConfigLoader(config_path)
+        # Кроссплатформенные пути
+        self.base_dir = Path(__file__).parent.parent
+        self.config_path = self.base_dir / config_path
+        self.data_path = self.base_dir / data_path
+        
+        # Настройка логирования
+        self._setup_logging()
+        
+        # Создаем необходимые директории
+        self._create_directories()
+        
+        # Остальная инициализация...
+        self.config_loader = ConfigLoader(str(self.config_path))
         self.settings = self.config_loader.load_settings()
-        self.security_system = SecuritySystem(config_path)
-        self.context_optimizer = ContextOptimizer(data_path)
-        self.emergency_save = EmergencySave(data_path)
+        self.security_system = SecuritySystem(str(self.config_path))
+        self.context_optimizer = ContextOptimizer(str(self.data_path))
+        self.emergency_save = EmergencySave(str(self.data_path))
         
         # Настраиваем аварийное сохранение
         self.emergency_save.setup_emergency_handlers()
         
-        self.model = self.settings['model']['name']
+        self.model = self.settings.get('model', {}).get('name', 'nicole-kyara')
         self.base_url = "http://localhost:11434/api"
         self.conversation_history = []
         self.long_term_memory = []
@@ -37,29 +63,54 @@ class KyaraCharacterManager:
         # Счетчики для автосохранения
         self.message_count = 0
         
-        print("🧠 Долговременная память: ЗАГРУЖЕНА")
+        self.logger.info("🧠 Долговременная память: ЗАГРУЖЕНА")
         if self.long_term_memory:
-            print(f"   📚 Воспоминаний: {len(self.long_term_memory)}")
-        
+            self.logger.info(f"   📚 Воспоминаний: {len(self.long_term_memory)}")
+    
+    def _setup_logging(self):
+        """Настройка логирования"""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler(self.data_path / 'nicole_system.log', encoding='utf-8')
+            ]
+        )
+        self.logger = logging.getLogger("NicoleManager")
+    
+    def _create_directories(self):
+        """Создает необходимые директории"""
+        try:
+            self.data_path.mkdir(exist_ok=True)
+            (self.data_path / "long_term_memory").mkdir(exist_ok=True)
+            (self.data_path / "emergency_backup").mkdir(exist_ok=True)
+            (self.data_path / "conversations").mkdir(exist_ok=True)
+            self.logger.info("📁 Системные директории созданы")
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка создания директорий: {e}")
+            raise
+    
     def add_system_message(self, message):
+        """Добавляет системное сообщение в историю"""
         self.conversation_history.append({"role": "system", "content": message})
     
     def load_long_term_memory(self):
         """Загружает долговременную память из файла"""
-        memory_dir = os.path.join("data", "long_term_memory")
-        os.makedirs(memory_dir, exist_ok=True)
-        memory_file = os.path.join(memory_dir, "memory.json")
+        memory_dir = self.data_path / "long_term_memory"
+        memory_file = memory_dir / "memory.json"
         
-        if os.path.exists(memory_file):
+        if memory_file.exists():
             try:
                 with open(memory_file, 'r', encoding='utf-8') as f:
                     self.long_term_memory = json.load(f)
-                print(f"✅ Загружено воспоминаний: {len(self.long_term_memory)}")
+                self.logger.info(f"✅ Загружено воспоминаний: {len(self.long_term_memory)}")
             except Exception as e:
-                print(f"❌ Ошибка загрузки памяти: {e}")
+                self.logger.error(f"❌ Ошибка загрузки памяти: {e}")
                 self.long_term_memory = []
         else:
             self.long_term_memory = []
+            self.logger.info("📝 Файл памяти не найден, создан новый")
     
     def inject_memory_into_context(self):
         """Добавляет воспоминания в системный промпт"""
@@ -71,7 +122,7 @@ class KyaraCharacterManager:
             # Обновляем системный промпт с памятью
             if self.conversation_history and self.conversation_history[0]['role'] == 'system':
                 self.conversation_history[0]['content'] += f"\n\nВАЖНЫЕ ВОСПОМИНАНИЯ ИЗ ПРОШЛЫХ БЕСЕД:\n{memory_context}"
-                print("🔗 Воспоминания добавлены в контекст")
+                self.logger.info("🔗 Воспоминания добавлены в контекст")
     
     def build_memory_context(self):
         """Строит контекст из долговременной памяти"""
@@ -142,23 +193,25 @@ class KyaraCharacterManager:
         }
         self.long_term_memory.append(memory_entry)
         self.save_long_term_memory()
+        self.logger.info(f"💾 Ручное сохранение в память: '{content[:50]}...'")
         return f"✅ Информация сохранена в долговременную память: '{content}'"
     
     def save_long_term_memory(self):
         """Сохраняет долговременную память в файл"""
-        memory_dir = os.path.join("data", "long_term_memory")
-        os.makedirs(memory_dir, exist_ok=True)
-        memory_file = os.path.join(memory_dir, "memory.json")
+        memory_dir = self.data_path / "long_term_memory"
+        memory_file = memory_dir / "memory.json"
         
         # Ограничиваем размер памяти (последние 200 записей)
         if len(self.long_term_memory) > 200:
             self.long_term_memory = self.long_term_memory[-200:]
+            self.logger.info("🧹 Память очищена (сохранено 200 последних записей)")
         
         try:
             with open(memory_file, 'w', encoding='utf-8') as f:
                 json.dump(self.long_term_memory, f, ensure_ascii=False, indent=2)
+            self.logger.debug("💾 Память сохранена на диск")
         except Exception as e:
-            print(f"❌ Ошибка сохранения памяти: {e}")
+            self.logger.error(f"❌ Ошибка сохранения памяти: {e}")
     
     def detect_memory_commands(self, user_message):
         """Обрабатывает специальные команды памяти"""
@@ -186,6 +239,7 @@ class KyaraCharacterManager:
         if 'очисти память' in message_lower or 'удали воспоминания' in message_lower:
             self.long_term_memory = []
             self.save_long_term_memory()
+            self.logger.warning("🧹 Память очищена по команде пользователя")
             return True, "✅ Долговременная память очищена."
         
         return False, None
@@ -214,9 +268,11 @@ class KyaraCharacterManager:
     def optimize_context(self):
         """Оптимизирует контекст для экономии памяти"""
         if len(self.conversation_history) > 25:
+            original_count = len(self.conversation_history)
             self.conversation_history = self.context_optimizer.compress_conversation(
                 self.conversation_history
             )
+            self.logger.info(f"🔧 Контекст оптимизирован: {original_count} → {len(self.conversation_history)} сообщений")
     
     def save_to_long_term_memory(self, message):
         """Сохраняет важные сообщения в долговременную память"""
@@ -231,6 +287,7 @@ class KyaraCharacterManager:
                 'type': 'auto_save'
             }
             self.long_term_memory.append(memory_entry)
+            self.logger.debug(f"💾 Автосохранение в память (важность: {importance}): {message['content'][:30]}...")
             
             # Автосохранение файла каждые 5 важных сообщений
             if importance >= 3 and len(self.long_term_memory) % 5 == 0:
@@ -240,13 +297,16 @@ class KyaraCharacterManager:
         return datetime.now().isoformat()
     
     def chat(self, user_message):
+        """Основной метод обработки сообщений"""
         # АВАРИЙНОЕ СОХРАНЕНИЕ каждые 50 сообщений
         self.message_count += 1
         if self.message_count % 50 == 0:
             self.emergency_save.save_emergency_state({
                 'conversation_history': self.conversation_history[-20:],
-                'long_term_memory': self.long_term_memory[-100:]
+                'long_term_memory': self.long_term_memory[-100:],
+                'message_count': self.message_count
             })
+            self.logger.info("🚨 Выполнено плановое аварийное сохранение")
         
         # ПРОВЕРКА КОМАНД ПАМЯТИ
         is_memory_command, memory_response = self.detect_memory_commands(user_message)
@@ -260,6 +320,7 @@ class KyaraCharacterManager:
         if is_injection:
             self.conversation_history.append({"role": "user", "content": user_message})
             self.conversation_history.append({"role": "assistant", "content": security_response})
+            self.logger.warning(f"🚨 Обнаружена попытка инъекции: {user_message}")
             return security_response
         
         # ОПТИМИЗАЦИЯ КОНТЕКСТА
@@ -272,17 +333,17 @@ class KyaraCharacterManager:
         self.save_to_long_term_memory({"role": "user", "content": user_message})
         
         # ПОДГОТОВКА ДАННЫХ ДЛЯ API
-        recent_messages = self.conversation_history[-self.settings['memory']['short_term_messages']:]
+        recent_messages = self.conversation_history[-self.settings.get('memory', {}).get('short_term_messages', 30):]
         
         data = {
             "model": self.model,
             "messages": recent_messages,
             "stream": False,
             "options": {
-                "num_predict": self.settings['model']['max_tokens'],
-                "temperature": self.settings['model']['temperature'],
-                "top_p": self.settings['model']['top_p'],
-                "repeat_penalty": self.settings['model']['repeat_penalty']
+                "num_predict": self.settings.get('model', {}).get('max_tokens', 500),
+                "temperature": self.settings.get('model', {}).get('temperature', 0.7),
+                "top_p": self.settings.get('model', {}).get('top_p', 0.9),
+                "repeat_penalty": self.settings.get('model', {}).get('repeat_penalty', 1.1)
             }
         }
         
@@ -308,11 +369,20 @@ class KyaraCharacterManager:
                 # ФИНАЛЬНОЕ СОХРАНЕНИЕ ПАМЯТИ
                 self.save_long_term_memory()
                 
+                self.logger.info(f"💬 Обработано сообщение, ответ: {assistant_message[:50]}...")
                 return assistant_message
             else:
+                self.logger.error(f"❌ Ошибка API Ollama: {response.status_code}")
                 return "Ошибка системы: временная неисправность протокола связи."
                 
+        except requests.exceptions.Timeout:
+            self.logger.error("⏰ Таймаут подключения к Ollama")
+            return "Временная потеря связи. Протоколы восстановления активированы."
+        except requests.exceptions.ConnectionError:
+            self.logger.error("🔌 Ошибка подключения к Ollama")
+            return "Сервис временно недоступен. Проверьте запущен ли Ollama."
         except Exception as e:
+            self.logger.error(f"❌ Неизвестная ошибка: {e}")
             return "Временная потеря связи. Протоколы восстановления активированы."
     
     def get_conversation_stats(self):
@@ -323,7 +393,8 @@ class KyaraCharacterManager:
             'total_messages': len(self.conversation_history),
             'long_term_memory_entries': len(self.long_term_memory),
             'important_memories': important_memories,
-            'memory_usage': f"{len(self.conversation_history)}/25 сообщений"
+            'memory_usage': f"{len(self.conversation_history)}/25 сообщений",
+            'system_messages': len([m for m in self.conversation_history if m['role'] == 'system'])
         }
 
 # Тестирование
