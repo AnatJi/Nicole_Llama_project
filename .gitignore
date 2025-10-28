@@ -58,3 +58,7 @@ Thumbs.db
 
 # VS Code
 .vscode/
+*.gguf
+models/
+*.bin
+*.pth
