@@ -62,3 +62,4 @@ Thumbs.db
 models/
 *.bin
 *.pth
+bin/*
