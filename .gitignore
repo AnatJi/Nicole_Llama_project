@@ -63,3 +63,24 @@ models/
 *.bin
 *.pth
 bin/*
+
+# Нейросетевые модели и большие файлы
+*.gguf
+*.bin
+*.pth
+*.safetensors
+*.h5
+*.pt
+
+# Бинарные файлы Ollama
+bin/ollama/
+!bin/ollama/README.md
+
+# Модели
+bin/models/
+
+# Временные файлы данных (дополнительно)
+data/current_stream
+data/stream_archive
+data/stream_memory
+data/emergency_backup/
