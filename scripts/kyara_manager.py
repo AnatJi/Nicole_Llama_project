@@ -5,6 +5,7 @@ import json
 import os
 import random
 import logging
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -47,7 +48,8 @@ class KyaraCharacterManager:
         # Настраиваем аварийное сохранение
         self.emergency_save.setup_emergency_handlers()
         
-        self.model = self.settings.get('model', {}).get('name', 'nicole-kyara')
+        # Автоопределение модели
+        self.model = self._detect_available_model()
         self.base_url = "http://localhost:11434/api"
         self.conversation_history = []
         self.long_term_memory = []
@@ -66,6 +68,55 @@ class KyaraCharacterManager:
         self.logger.info("🧠 Долговременная память: ЗАГРУЖЕНА")
         if self.long_term_memory:
             self.logger.info(f"   📚 Воспоминаний: {len(self.long_term_memory)}")
+        
+        self.logger.info(f"🤖 Используется модель: {self.model}")
+    
+    def _detect_available_model(self):
+        """Автоматически определяет доступную модель"""
+        try:
+            result = subprocess.run(
+                ["ollama", "list"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                available_models = result.stdout.lower()
+                
+                if "nicole-kyara" in available_models:
+                    self.logger.info("✅ Обнаружена кастомная модель: nicole-kyara")
+                    return "nicole-kyara"
+                elif "llama3.1:8b" in available_models:
+                    self.logger.info("✅ Обнаружена модель: llama3.1:8b")
+                    return "llama3.1:8b"
+                elif "llama3.1" in available_models:
+                    self.logger.info("✅ Обнаружена модель: llama3.1")
+                    return "llama3.1"
+                elif "llama" in available_models:
+                    # Находим первую доступную модель llama
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if 'llama' in line.lower() and 'name' not in line.lower():
+                            model_name = line.split()[0]
+                            self.logger.info(f"✅ Обнаружена модель: {model_name}")
+                            return model_name
+                
+                self.logger.warning("⚠️ Не обнаружены подходящие модели Ollama")
+            else:
+                self.logger.warning("⚠️ Не удалось получить список моделей Ollama")
+            
+            # Возвращаем модель по умолчанию из настроек или базовую
+            default_model = self.settings.get('model', {}).get('name', 'llama3.1:8b')
+            self.logger.info(f"🔄 Используется модель по умолчанию: {default_model}")
+            return default_model
+            
+        except subprocess.TimeoutExpired:
+            self.logger.warning("⏰ Таймаут при проверке моделей Ollama")
+            return self.settings.get('model', {}).get('name', 'llama3.1:8b')
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка определения модели: {e}")
+            return self.settings.get('model', {}).get('name', 'llama3.1:8b')
     
     def _setup_logging(self):
         """Настройка логирования"""
@@ -296,8 +347,21 @@ class KyaraCharacterManager:
     def _get_timestamp(self):
         return datetime.now().isoformat()
     
+    def check_ollama_connection(self):
+        """Проверяет соединение с Ollama"""
+        try:
+            response = requests.get(self.base_url + "/tags", timeout=10)
+            return response.status_code == 200
+        except:
+            return False
+    
     def chat(self, user_message):
         """Основной метод обработки сообщений"""
+        # Проверка соединения с Ollama
+        if not self.check_ollama_connection():
+            self.logger.error("🔌 Нет соединения с Ollama")
+            return "Ошибка: сервис Ollama недоступен. Убедитесь, что Ollama запущен."
+        
         # АВАРИЙНОЕ СОХРАНЕНИЕ каждые 50 сообщений
         self.message_count += 1
         if self.message_count % 50 == 0:
@@ -394,7 +458,8 @@ class KyaraCharacterManager:
             'long_term_memory_entries': len(self.long_term_memory),
             'important_memories': important_memories,
             'memory_usage': f"{len(self.conversation_history)}/25 сообщений",
-            'system_messages': len([m for m in self.conversation_history if m['role'] == 'system'])
+            'system_messages': len([m for m in self.conversation_history if m['role'] == 'system']),
+            'current_model': self.model
         }
 
 # Тестирование
@@ -405,6 +470,7 @@ if __name__ == "__main__":
     print("🔒 Протоколы безопасности: АКТИВНЫ")
     print("💾 Долговременная память: АКТИВНА")
     print("🚨 Аварийное сохранение: АКТИВНО")
+    print(f"🤖 Используемая модель: {manager.model}")
     print("\nКоманды памяти:")
     print("  'запомни что ...' - сохранить в память")
     print("  'покажи память' - показать состояние памяти")
@@ -425,6 +491,7 @@ if __name__ == "__main__":
                 print(f"📊 Сообщений: {stats['total_messages']}")
                 print(f"🧠 Память: {stats['long_term_memory_entries']} записей")
                 print(f"⭐ Важных: {stats['important_memories']}")
+                print(f"🤖 Модель: {stats['current_model']}")
                 print(f"💾 Использование: {stats['memory_usage']}")
                 continue
             
