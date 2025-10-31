@@ -1,0 +1,5 @@
+--no-index
+--find-links ./dependencies
+requests>=2.31.0
+PyYAML>=6.0
+certifi>=2023.11.17

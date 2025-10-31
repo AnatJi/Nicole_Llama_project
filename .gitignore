@@ -1,40 +1,6 @@
-# Временные данные чатов и диалогов
-data/
-*.json
-
-# Кэш Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Логи и временные файлы
-*.log
-logs/
-
 # Файлы окружения и конфиги с чувствительными данными
 .env
 .venv
-env/
 venv/
 ENV/
 env.bak/
@@ -58,29 +24,96 @@ Thumbs.db
 
 # VS Code
 .vscode/
-*.gguf
-models/
-*.bin
-*.pth
-bin/*
 
-# Нейросетевые модели и большие файлы
+# ========== БИНАРНЫЕ ФАЙЛЫ И МОДЕЛИ ==========
+
+# Portable Python - ИСКЛЮЧИТЬ ВСЕ
+bin/python/
+!bin/python/README.md  # если есть README - сохранить
+
+# Оффлайн зависимости Python - ИСКЛЮЧИТЬ ВСЕ
+dependencies/
+
+# Установщики Ollama - ИСКЛЮЧИТЬ ВСЕ
+bin/ollama/
+!bin/ollama/README.md  # если есть README - сохранить
+
+# Модели - ИСКЛЮЧИТЬ ВСЕ
+bin/models/
+
+# Расширения бинарных файлов и моделей
 *.gguf
 *.bin
 *.pth
 *.safetensors
 *.h5
 *.pt
+*.onnx
+*.tflite
+*.pb
+*.joblib
+*.pickle
+*.pkl
 
-# Бинарные файлы Ollama
-bin/ollama/
-!bin/ollama/README.md
+# Исполняемые файлы (кроме скриптов запуска)
+*.exe
+*.dll
+*.so
+*.dylib
 
-# Модели
-bin/models/
+# Архивы и дистрибутивы
+*.whl
+*.egg
+*.tar.gz
+*.zip
+*.7z
 
-# Временные файлы данных (дополнительно)
+# ========== ВРЕМЕННЫЕ ФАЙЛЫ ==========
+
+# Временные файлы данных
 data/current_stream
 data/stream_archive
 data/stream_memory
 data/emergency_backup/
+
+# Кэш и временные файлы Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Логи
+*.log
+logs/
+
+# Резервные копии
+*.bak
+*.backup
+*~
+
+# Файлы операционных систем
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+[Tt]humbs.db

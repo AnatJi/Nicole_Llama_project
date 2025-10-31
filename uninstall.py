@@ -28,58 +28,80 @@ class NicoleUninstaller:
         """Удаляет модель nicole-kyara из Ollama"""
         self.logger.info("Удаление модели nicole-kyara из Ollama...")
         try:
-            subprocess.run(["ollama", "rm", "nicole-kyara"], 
-                         capture_output=True, timeout=30)
-            self.logger.info("✅ Модель nicole-kyara удалена")
+            result = subprocess.run(["ollama", "rm", "nicole-kyara"], 
+                         capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                self.logger.info("✅ Модель nicole-kyara удалена")
+            else:
+                self.logger.warning(f"⚠️ Не удалось удалить модель: {result.stderr}")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Ошибка удаления модели: {e}")
+    
+    def remove_project_files(self):
+        """Удаляет ВСЕ файлы проекта кроме самого uninstall.py"""
+        self.logger.info("Удаление файлов проекта...")
+        
+        # Сохраняем uninstall.py для последующего удаления
+        current_file = Path(__file__)
+        
+        # Удаляем все файлы и папки кроме текущего скрипта
+        for item in self.base_dir.iterdir():
+            if item != current_file and item.name != 'uninstall.log':
+                try:
+                    if item.is_file():
+                        item.unlink()
+                        self.logger.info(f"✅ Удален файл: {item.name}")
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                        self.logger.info(f"✅ Удалена папка: {item.name}")
+                except Exception as e:
+                    self.logger.error(f"❌ Ошибка удаления {item}: {e}")
+    
+    def clean_portable_python(self):
+        """Очищает установленные зависимости portable Python"""
+        self.logger.info("Очистка portable Python зависимостей...")
+        
+        python_dirs = [
+            self.base_dir / "bin" / "python" / "windows",
+            self.base_dir / "bin" / "python" / "linux", 
+            self.base_dir / "bin" / "python" / "mac"
+        ]
+        
+        for python_dir in python_dirs:
+            if python_dir.exists():
+                # Для Windows
+                if python_dir.name == "windows":
+                    lib_dir = python_dir / "Lib" / "site-packages"
+                    if lib_dir.exists():
+                        try:
+                            shutil.rmtree(lib_dir)
+                            self.logger.info(f"✅ Очищены зависимости: {lib_dir}")
+                        except Exception as e:
+                            self.logger.error(f"❌ Ошибка очистки {lib_dir}: {e}")
+                
+                # Для Linux/Mac
+                else:
+                    lib_dir = python_dir / "lib" / "python3.11" / "site-packages"
+                    if lib_dir.exists():
+                        try:
+                            shutil.rmtree(lib_dir)
+                            self.logger.info(f"✅ Очищены зависимости: {lib_dir}")
+                        except Exception as e:
+                            self.logger.error(f"❌ Ошибка очистки {lib_dir}: {e}")
+    
+    def remove_system_dependencies(self):
+        """Предлагает удалить системные зависимости"""
+        self.logger.info("Проверка системных зависимостей...")
+        
+        # Проверяем установлен ли Ollama
+        try:
+            subprocess.run(["ollama", "--version"], 
+                         capture_output=True, check=True)
+            response = input("Удалить Ollama с системы? (y/N): ")
+            if response.lower() == 'y':
+                self.remove_ollama_system()
         except:
-            self.logger.warning("⚠️ Не удалось удалить модель nicole-kyara")
-    
-    def remove_project_data(self):
-        """Удаляет все данные проекта"""
-        directories_to_remove = [
-            self.base_dir / "data",
-            self.base_dir / "logs",
-            self.base_dir / "__pycache__",
-            self.base_dir / "scripts" / "__pycache__"
-        ]
-        
-        files_to_remove = [
-            self.base_dir / "install.log",
-            self.base_dir / "uninstall.log",
-            self.base_dir / "nicole_system.log"
-        ]
-        
-        # Удаление директорий
-        for directory in directories_to_remove:
-            if directory.exists():
-                try:
-                    shutil.rmtree(directory)
-                    self.logger.info(f"✅ Удалена директория: {directory}")
-                except Exception as e:
-                    self.logger.error(f"❌ Ошибка удаления {directory}: {e}")
-        
-        # Удаление файлов
-        for file_path in files_to_remove:
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                    self.logger.info(f"✅ Удален файл: {file_path}")
-                except Exception as e:
-                    self.logger.error(f"❌ Ошибка удаления {file_path}: {e}")
-    
-    def clean_system_dependencies(self):
-        """Очищает системные зависимости (опционально)"""
-        self.logger.info("Очистка системных зависимостей...")
-        
-        # Предлагаем удалить Ollama (только по согласию)
-        response = input("Удалить Ollama с системы? (y/N): ")
-        if response.lower() == 'y':
-            self.remove_ollama_system()
-        
-        # Предлагаем удалить Python зависимости
-        response = input("Удалить Python зависимости проекта? (y/N): ")
-        if response.lower() == 'y':
-            self.remove_python_dependencies()
+            self.logger.info("✅ Ollama не установлен в системе")
     
     def remove_ollama_system(self):
         """Удаляет Ollama с системы"""
@@ -88,108 +110,92 @@ class NicoleUninstaller:
         
         try:
             if system == "windows":
-                # Через PowerShell
+                # Через winget или ручное удаление
                 subprocess.run([
-                    "powershell", "-Command", 
-                    "Get-WmiObject -Class Win32_Product | Where-Object {$_.Name -like '*Ollama*'} | ForEach-Object {$_.Uninstall()}"
-                ], timeout=60)
+                    "winget", "uninstall", "Ollama.Ollama"
+                ], timeout=60, capture_output=True)
+                self.logger.info("✅ Ollama удален через winget")
+                
             elif system == "linux":
-                # Для Linux (Ubuntu-based)
-                subprocess.run(["sudo", "apt", "remove", "--purge", "-y", "ollama"], 
-                             timeout=60)
+                # Для Linux (универсальный способ)
+                subprocess.run(["sudo", "rm", "-f", "/usr/local/bin/ollama"], 
+                             timeout=30)
+                self.logger.info("✅ Ollama удален для Linux")
+                
             elif system == "darwin":
                 # Для macOS
                 subprocess.run([
                     "sudo", "rm", "-rf", 
                     "/Applications/Ollama.app",
                     "/usr/local/bin/ollama"
-                ], timeout=60)
+                ], timeout=30)
+                self.logger.info("✅ Ollama удален для macOS")
             
-            self.logger.info("✅ Ollama удален с системы")
         except Exception as e:
             self.logger.error(f"❌ Ошибка удаления Ollama: {e}")
+            print("Удалите Ollama вручную с Панели управления")
     
-    def remove_python_dependencies(self):
-        """Удаляет Python зависимости проекта"""
-        self.logger.info("Удаление Python зависимостей...")
-        
-        requirements_file = self.base_dir / "requirements.txt"
-        if not requirements_file.exists():
-            self.logger.warning("Файл requirements.txt не найден")
-            return
-        
-        try:
-            # Получаем список зависимостей
-            with open(requirements_file, 'r') as f:
-                dependencies = [line.strip().split('>=')[0] for line in f 
-                              if line.strip() and not line.startswith('#')]
-            
-            # Удаляем каждую зависимость
-            for dep in dependencies:
-                subprocess.run([
-                    sys.executable, "-m", "pip", "uninstall", "-y", dep
-                ], capture_output=True)
-            
-            self.logger.info("✅ Python зависимости удалены")
-        except Exception as e:
-            self.logger.error(f"❌ Ошибка удаления зависимостей: {e}")
-    
-    def show_remaining_files(self):
-        """Показывает оставшиеся файлы проекта"""
-        self.logger.info("Оставшиеся файлы проекта:")
-        
-        exclude_dirs = {'bin', '.git'}  # Исключаем бинарники и git
-        
-        for item in self.base_dir.rglob('*'):
-            if item.is_file() and not any(part in exclude_dirs for part in item.parts):
-                print(f"  - {item.relative_to(self.base_dir)}")
-        
-        print("\nДля полного удаления удалите папку проекта вручную:")
-        print(f"  {self.base_dir}")
+    def show_final_instructions(self):
+        """Показывает финальные инструкции"""
+        print("\n" + "="*50)
+        print("🗑️  Удаление завершено!")
+        print("="*50)
+        print("Были удалены:")
+        print("  ✅ Все файлы проекта")
+        print("  ✅ Модель nicole-kyara из Ollama") 
+        print("  ✅ Зависимости portable Python")
+        print("  ✅ Логи и временные файлы")
+        print("\nДля полной очистки:")
+        print(f"  Удалите папку проекта: {self.base_dir}")
+        print("\nЕсли вы удалили Ollama:")
+        print("  Перезагрузите компьютер для завершения удаления")
     
     def uninstall(self):
         """Основной метод удаления"""
-        self.logger.info("🚀 Запуск удаления Nicole...")
+        self.logger.info("🚀 Запуск полного удаления Nicole...")
         self.logger.info("=" * 50)
         
         try:
-            print("Это действие удалит все данные проекта и настройки.")
-            confirm = input("Продолжить? (yes/NO): ")
+            print("⚠️  ВНИМАНИЕ: Это действие удалит ВСЕ данные проекта!")
+            print("Будут удалены:")
+            print("  • Все файлы и папки проекта")
+            print("  • Модель nicole-kyara из Ollama")
+            print("  • Все настройки и логи")
+            print("  • (Опционально) Ollama с системы")
+            print("\nЭто действие НЕОБРАТИМО!")
             
-            if confirm.lower() != 'yes':
-                print("Удаление отменено.")
+            confirm = input("\nВведите 'DELETE ALL' для подтверждения: ")
+            
+            if confirm != 'DELETE ALL':
+                print("❌ Удаление отменено.")
                 return
             
             # 1. Удаление модели из Ollama
             self.remove_ollama_model()
             
-            # 2. Удаление данных проекта
-            self.remove_project_data()
+            # 2. Очистка portable Python зависимостей
+            self.clean_portable_python()
             
-            # 3. Очистка системных зависимостей (опционально)
-            self.clean_system_dependencies()
+            # 3. Удаление всех файлов проекта
+            self.remove_project_files()
             
-            # 4. Показ оставшихся файлов
-            self.show_remaining_files()
+            # 4. Удаление системных зависимостей (опционально)
+            self.remove_system_dependencies()
             
-            self.logger.info("=" * 50)
-            self.logger.info("🎉 Удаление завершено!")
+            # 5. Финальные инструкции
+            self.show_final_instructions()
             
-            print("\n✅ Удаление завершено!")
-            print("Ручное удаление: удалите папку проекта для полной очистки.")
+            self.logger.info("🎉 Полное удаление завершено!")
             
         except Exception as e:
             self.logger.error(f"❌ Ошибка удаления: {e}")
             print(f"❌ Произошла ошибка: {e}")
 
 def main():
-    print("🗑️  Удаление Nicole - Полная очистка")
+    print("🗑️  Nicole - Полное удаление")
     print("=" * 50)
-    print("Этот скрипт удалит:")
-    print("  • Все данные и настройки проекта")
-    print("  • Логи и временные файлы")
-    print("  • Модель nicole-kyara из Ollama")
-    print("  • (Опционально) Системные зависимости")
+    print("Этот скрипт полностью удалит проект Nicole")
+    print("и все связанные с ним данные.")
     print("=" * 50)
     
     uninstaller = NicoleUninstaller()

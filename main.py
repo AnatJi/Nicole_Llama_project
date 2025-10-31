@@ -5,17 +5,46 @@ import sys
 import subprocess
 from pathlib import Path
 
-def check_dependencies():
-    """Проверяет установлены ли зависимости"""
+def setup_environment():
+    """Настраивает окружение для кроссплатформенной работы"""
     base_dir = Path(__file__).parent
-    scripts_dir = base_dir / "scripts"
     
-    # Добавляем scripts в путь
+    # Добавляем scripts в путь для импорта
+    scripts_dir = base_dir / "scripts"
     sys.path.insert(0, str(scripts_dir))
     
+    # Настраиваем пути для бинарников
+    bin_dir = base_dir / "bin"
+    if bin_dir.exists():
+        # Добавляем portable Python в PATH если нужно
+        python_dirs = [
+            bin_dir / "python" / "windows",
+            bin_dir / "python" / "linux", 
+            bin_dir / "python" / "mac"
+        ]
+        
+        for python_dir in python_dirs:
+            if python_dir.exists():
+                # Для Windows добавляем папку с python.exe и Scripts
+                if python_dir.name == "windows":
+                    os.environ['PATH'] = str(python_dir) + os.pathsep + os.environ['PATH']
+                    scripts_path = python_dir / "Scripts"
+                    if scripts_path.exists():
+                        os.environ['PATH'] = str(scripts_path) + os.pathsep + os.environ['PATH']
+                # Для Linux/Mac добавляем bin папку
+                else:
+                    bin_path = python_dir / "bin"
+                    if bin_path.exists():
+                        os.environ['PATH'] = str(bin_path) + os.pathsep + os.environ['PATH']
+                break
+
+# ОСТАЛЬНАЯ ЧАСТЬ main.py БЕЗ ИЗМЕНЕНИЙ
+def check_dependencies():
+    """Проверяет установлены ли зависимости"""
     try:
         import requests
         import yaml
+        import logging
         return True
     except ImportError as e:
         print(f"❌ Не найдены зависимости: {e}")
@@ -35,26 +64,56 @@ def check_ollama():
     except:
         return False
 
-def setup_environment():
-    """Настраивает окружение"""
-    base_dir = Path(__file__).parent
-    bin_dir = base_dir / "bin"
-    
-    # Добавляем локальные бинарники в PATH
-    if bin_dir.exists():
-        ollama_dirs = [
-            bin_dir / "ollama" / "windows",
-            bin_dir / "ollama" / "linux", 
-            bin_dir / "ollama" / "mac"
-        ]
+def ensure_model_exists():
+    """Проверяет и создает модель при необходимости"""
+    try:
+        result = subprocess.run(
+            ["ollama", "list"], 
+            capture_output=True, 
+            text=True,
+            timeout=30
+        )
         
-        for ollama_dir in ollama_dirs:
-            if ollama_dir.exists():
-                os.environ['PATH'] = str(ollama_dir) + os.pathsep + os.environ['PATH']
-                break
+        if "nicole-kyara" not in result.stdout:
+            print("⚠️ Модель nicole-kyara не найдена")
+            print("Создаю модель...")
+            
+            # Пробуем локальный Modelfile сначала
+            modelfile_local = Path("Nicole-Kyara-Local.Modelfile")
+            modelfile_online = Path("Nicole-Kyara.Modelfile")
+            
+            if modelfile_local.exists():
+                subprocess.run([
+                    "ollama", "create", "nicole-kyara", 
+                    "-f", str(modelfile_local)
+                ], check=True, timeout=300)
+                print("✅ Модель создана из локального файла")
+            elif modelfile_online.exists():
+                subprocess.run([
+                    "ollama", "create", "nicole-kyara", 
+                    "-f", str(modelfile_online)
+                ], check=True, timeout=600)
+                print("✅ Модель создана из онлайн источников")
+            else:
+                print("❌ Файлы Modelfile не найдены")
+                return False
+        else:
+            print("✅ Модель nicole-kyara обнаружена")
+            
+        return True
+        
+    except subprocess.TimeoutExpired:
+        print("❌ Таймаут создания модели")
+        return False
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Ошибка создания модели: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Неизвестная ошибка: {e}")
+        return False
 
 def main():
-    print("🤖 Nicole - Автономная версия")
+    print("🤖 Nicole - Полностью автономная версия")
     print("=" * 50)
     
     # Настройка окружения
@@ -70,38 +129,14 @@ def main():
         print("Запустите установщик: python install.py")
         sys.exit(1)
     
-    # Проверка модели
-    try:
-        result = subprocess.run(
-            ["ollama", "list"], 
-            capture_output=True, 
-            text=True,
-            timeout=30
-        )
-        if "nicole-kyara" not in result.stdout:
-            print("⚠️ Модель nicole-kyara не найдена")
-            print("Создаю модель...")
-            
-            modelfile = Path("Nicole-Kyara.Modelfile")
-            if modelfile.exists():
-                subprocess.run([
-                    "ollama", "create", "nicole-kyara", 
-                    "-f", str(modelfile)
-                ], check=True)
-                print("✅ Модель создана")
-            else:
-                print("❌ Файл Nicole-Kyara.Modelfile не найден")
-                sys.exit(1)
-    except subprocess.TimeoutExpired:
-        print("❌ Таймаут проверки моделей")
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Ошибка создания модели: {e}")
+    # Проверка и создание модели
+    if not ensure_model_exists():
+        print("❌ Не удалось настроить модель")
         sys.exit(1)
     
     # Запуск основной системы
     try:
-        from scripts.kyara_manager import KyaraCharacterManager
+        from kyara_manager import KyaraCharacterManager
         
         print("🔒 Протоколы безопасности: АКТИВНЫ")
         print("💾 Долговременная память: АКТИВНА") 
@@ -129,6 +164,7 @@ def main():
                     print(f"📊 Сообщений: {stats['total_messages']}")
                     print(f"🧠 Память: {stats['long_term_memory_entries']} записей")
                     print(f"⭐ Важных: {stats['important_memories']}")
+                    print(f"🤖 Модель: {stats['current_model']}")
                     continue
                 
                 elif user_input.lower() == 'память':

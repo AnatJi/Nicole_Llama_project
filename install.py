@@ -5,6 +5,7 @@ import sys
 import platform
 import subprocess
 import shutil
+import time
 from pathlib import Path
 import logging
 
@@ -12,7 +13,6 @@ class NicoleInstaller:
     def __init__(self):
         self.base_dir = Path(__file__).parent
         self.bin_dir = self.base_dir / "bin"
-        self.scripts_dir = self.base_dir / "scripts"
         self.setup_logging()
         
     def setup_logging(self):
@@ -30,9 +30,7 @@ class NicoleInstaller:
     def detect_os(self):
         """Определяет операционную систему"""
         system = platform.system().lower()
-        arch = platform.machine().lower()
-        
-        self.logger.info(f"Обнаружена ОС: {system}, архитектура: {arch}")
+        self.logger.info(f"Обнаружена ОС: {system}")
         
         if system == "windows":
             return "windows"
@@ -43,43 +41,175 @@ class NicoleInstaller:
         else:
             raise Exception(f"Неподдерживаемая ОС: {system}")
     
-    def install_python_dependencies(self):
-        """Устанавливает Python зависимости"""
-        self.logger.info("Установка Python зависимостей...")
+    def get_portable_python(self):
+        """Находит portable Python в проекте"""
+        os_type = self.detect_os()
+        portable_python = self.bin_dir / "python" / os_type
         
-        requirements_file = self.base_dir / "requirements.txt"
+        if os_type == "windows":
+            portable_python = portable_python / "python.exe"
+        elif os_type == "linux":
+            portable_python = portable_python / "bin" / "python3"
+        else:  # mac
+            portable_python = portable_python / "bin" / "python3"
+        
+        if portable_python.exists():
+            if os_type != "windows":
+                portable_python.chmod(0o755)
+            self.logger.info(f"✅ Найден portable Python: {portable_python}")
+            return str(portable_python)
+        
+        raise Exception(f"Portable Python не найден по пути: {portable_python}")
+    
+    def install_python_dependencies(self):
+        """Устанавливает Python зависимости оффлайн"""
+        self.logger.info("Установка Python зависимостей оффлайн...")
+        
+        python_cmd = self.get_portable_python()
+        dependencies_dir = self.base_dir / "dependencies"
+        requirements_file = self.base_dir / "requirements-offline.txt"
+        
+        if not dependencies_dir.exists():
+            self.logger.error("❌ Папка dependencies не найдена")
+            raise Exception("Отсутствуют оффлайн зависимости")
+        
         if not requirements_file.exists():
-            self.logger.warning("Файл requirements.txt не найден")
-            return
+            self.logger.error("❌ Файл requirements-offline.txt не найден")
+            raise Exception("Отсутствует файл требований")
         
         try:
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", 
+            # Устанавливаем зависимости из локальной папки
+            result = subprocess.run([
+                python_cmd, "-m", "pip", "install",
+                "--no-index", "--find-links", str(dependencies_dir),
                 "-r", str(requirements_file)
-            ])
-            self.logger.info("✅ Python зависимости установлены")
-        except subprocess.CalledProcessError as e:
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                self.logger.info("✅ Python зависимости установлены")
+                self.logger.info(result.stdout)
+            else:
+                self.logger.error(f"❌ Ошибка установки: {result.stderr}")
+                raise Exception("Не удалось установить зависимости")
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error("⏰ Таймаут установки зависимостей")
+            raise
+        except Exception as e:
             self.logger.error(f"❌ Ошибка установки зависимостей: {e}")
             raise
     
-    def setup_ollama(self):
-        """Настраивает Ollama локально"""
-        os_type = self.detect_os()
-        ollama_bin_dir = self.bin_dir / "ollama" / os_type
+    def install_ollama_windows(self):
+        """Устанавливает Ollama на Windows"""
+        ollama_setup = self.bin_dir / "ollama" / "windows" / "OllamaSetup.exe"
         
-        self.logger.info(f"Настройка Ollama для {os_type}...")
-        
-        if not ollama_bin_dir.exists():
-            self.logger.error(f"❌ Ollama не найден для {os_type}")
-            self.logger.info("Скачайте Ollama с https://ollama.ai и поместите в bin/ollama/")
+        if not ollama_setup.exists():
+            self.logger.error("❌ OllamaSetup.exe не найден")
             return False
         
-        # Добавляем Ollama в PATH для текущей сессии
-        ollama_path = str(ollama_bin_dir)
-        if ollama_path not in os.environ['PATH']:
-            os.environ['PATH'] = ollama_path + os.pathsep + os.environ['PATH']
+        self.logger.info("🚀 Установка Ollama для Windows...")
+        try:
+            # Запускаем установщик
+            process = subprocess.Popen([str(ollama_setup)], 
+                                     stdout=subprocess.PIPE, 
+                                     stderr=subprocess.PIPE)
+            
+            # Ждем завершения установки
+            time.sleep(30)
+            
+            # Проверяем, завершился ли процесс
+            if process.poll() is None:
+                self.logger.info("⚠️ Установка занимает больше времени...")
+                time.sleep(30)
+            
+            self.logger.info("✅ Установка Ollama завершена")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка установки Ollama: {e}")
+            return False
+    
+    def install_ollama_linux(self):
+        """Устанавливает Ollama на Linux"""
+        self.logger.info("🚀 Установка Ollama для Linux...")
         
-        # Проверяем доступность ollama
+        try:
+            # Скачиваем и устанавливаем Ollama
+            result = subprocess.run([
+                "curl", "-fsSL", "https://ollama.com/install.sh"
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode != 0:
+                self.logger.error("❌ Не удалось скачать скрипт установки")
+                return False
+            
+            # Выполняем скрипт установки
+            install_result = subprocess.run(
+                ["sh"], 
+                input=result.stdout, 
+                text=True,
+                timeout=120
+            )
+            
+            if install_result.returncode == 0:
+                self.logger.info("✅ Ollama установлен для Linux")
+                return True
+            else:
+                self.logger.error("❌ Ошибка установки Ollama для Linux")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка установки Ollama для Linux: {e}")
+            return False
+    
+    def install_ollama_mac(self):
+        """Устанавливает Ollama на macOS"""
+        ollama_app = self.bin_dir / "ollama" / "mac" / "Ollama.app"
+        
+        if not ollama_app.exists():
+            self.logger.error("❌ Ollama.app не найден")
+            return False
+        
+        self.logger.info("🚀 Установка Ollama для macOS...")
+        try:
+            # Копируем в Applications
+            applications_dir = Path("/Applications")
+            if ollama_app.exists():
+                shutil.copytree(ollama_app, applications_dir / "Ollama.app", 
+                              dirs_exist_ok=True)
+                self.logger.info("✅ Ollama скопирован в Applications")
+                
+                # Запускаем Ollama
+                subprocess.run(["open", "-a", "Ollama"], check=True)
+                self.logger.info("✅ Ollama запущен")
+                time.sleep(10)
+                return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка установки Ollama для macOS: {e}")
+            return False
+    
+    def install_ollama(self):
+        """Устанавливает Ollama в зависимости от ОС"""
+        if self.check_ollama_installed():
+            self.logger.info("✅ Ollama уже установлен")
+            return True
+        
+        os_type = self.detect_os()
+        self.logger.info(f"Установка Ollama для {os_type}...")
+        
+        if os_type == "windows":
+            return self.install_ollama_windows()
+        elif os_type == "linux":
+            return self.install_ollama_linux()
+        elif os_type == "mac":
+            return self.install_ollama_mac()
+        else:
+            self.logger.error(f"Неподдерживаемая ОС: {os_type}")
+            return False
+    
+    def check_ollama_installed(self):
+        """Проверяет, установлен ли Ollama"""
         try:
             result = subprocess.run(
                 ["ollama", "--version"], 
@@ -88,29 +218,87 @@ class NicoleInstaller:
                 timeout=10
             )
             if result.returncode == 0:
-                self.logger.info("✅ Ollama настроен корректно")
+                self.logger.info(f"✅ Ollama обнаружен: {result.stdout.strip()}")
                 return True
-            else:
-                self.logger.error("❌ Ollama не запускается")
-                return False
-        except Exception as e:
-            self.logger.error(f"❌ Ошибка запуска Ollama: {e}")
-            return False
+        except:
+            pass
+        return False
     
     def setup_local_model(self):
         """Настраивает локальную модель"""
-        models_dir = self.bin_dir / "models"
-        local_model_dir = models_dir / "llama-3.1-8b"
+        local_model_dir = self.bin_dir / "models" / "llama-3.1-8b"
+        model_files = list(local_model_dir.glob("*.gguf"))
         
-        self.logger.info("Проверка локальной модели...")
-        
-        if local_model_dir.exists():
-            # Модель уже есть локально
-            self.logger.info("✅ Локальная модель обнаружена")
-            return True
-        else:
+        if not model_files:
             self.logger.warning("⚠️ Локальная модель не найдена")
-            self.logger.info("Для автономной работы скачайте модель и поместите в bin/models/")
+            self.logger.info("Создание модели из онлайн источников...")
+            return self.setup_online_model()
+        
+        model_file = model_files[0]
+        self.logger.info(f"✅ Локальная модель обнаружена: {model_file.name}")
+        
+        try:
+            # Создаем Modelfile для локальной модели
+            modelfile_content = f"""FROM {model_file}
+
+SYSTEM \"\"\"{{{{ .System }}}}\"\"\"
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER num_ctx 32000
+"""
+            modelfile_path = self.base_dir / "Nicole-Kyara-Local.Modelfile"
+            with open(modelfile_path, 'w', encoding='utf-8') as f:
+                f.write(modelfile_content)
+            
+            # Создаем модель в Ollama
+            self.logger.info("🚀 Создание модели из локального файла...")
+            result = subprocess.run([
+                "ollama", "create", "nicole-kyara", 
+                "-f", str(modelfile_path)
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                self.logger.info("✅ Локальная модель nicole-kyara создана")
+                return True
+            else:
+                self.logger.error(f"❌ Ошибка создания модели: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error("⏰ Таймаут создания модели")
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка настройки локальной модели: {e}")
+            return False
+    
+    def setup_online_model(self):
+        """Настраивает модель из онлайн источников (запасной вариант)"""
+        self.logger.info("🚀 Создание модели из онлайн источников...")
+        
+        modelfile_path = self.base_dir / "Nicole-Kyara.Modelfile"
+        if not modelfile_path.exists():
+            self.logger.error("❌ Nicole-Kyara.Modelfile не найден")
+            return False
+        
+        try:
+            result = subprocess.run([
+                "ollama", "create", "nicole-kyara", 
+                "-f", str(modelfile_path)
+            ], capture_output=True, text=True, timeout=600)
+            
+            if result.returncode == 0:
+                self.logger.info("✅ Модель nicole-kyara создана")
+                return True
+            else:
+                self.logger.error(f"❌ Ошибка создания модели: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error("⏰ Таймаут создания модели")
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка настройки модели: {e}")
             return False
     
     def create_directories(self):
@@ -131,26 +319,43 @@ class NicoleInstaller:
         """Проверяет системные требования"""
         self.logger.info("Проверка системных требований...")
         
-        # Проверяем Python версию
-        python_version = sys.version_info
-        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 8):
-            self.logger.error("❌ Требуется Python 3.8 или выше")
-            return False
-        
-        self.logger.info(f"✅ Python {python_version.major}.{python_version.minor}.{python_version.micro}")
-        
         # Проверяем доступное место на диске
         try:
             total, used, free = shutil.disk_usage(self.base_dir)
             free_gb = free // (2**30)
-            if free_gb < 5:
-                self.logger.warning(f"⚠️ Мало свободного места: {free_gb}GB (рекомендуется 5GB+)")
+            if free_gb < 10:
+                self.logger.warning(f"⚠️ Мало свободного места: {free_gb}GB (рекомендуется 10GB+)")
             else:
                 self.logger.info(f"✅ Свободное место: {free_gb}GB")
         except:
             self.logger.warning("⚠️ Не удалось проверить свободное место")
         
         return True
+    
+    def wait_for_ollama_service(self, max_wait=60):
+        """Ожидает запуска службы Ollama"""
+        self.logger.info("⏳ Ожидание запуска службы Ollama...")
+        
+        for i in range(max_wait):
+            try:
+                result = subprocess.run(
+                    ["ollama", "list"], 
+                    capture_output=True, 
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    self.logger.info("✅ Служба Ollama запущена")
+                    return True
+            except:
+                pass
+            
+            time.sleep(1)
+            if (i + 1) % 10 == 0:
+                self.logger.info(f"   ...ожидание ({i+1}/{max_wait} секунд)")
+        
+        self.logger.error("❌ Служба Ollama не запустилась")
+        return False
     
     def install(self):
         """Основной метод установки"""
@@ -168,28 +373,41 @@ class NicoleInstaller:
             # 3. Установка Python зависимостей
             self.install_python_dependencies()
             
-            # 4. Настройка Ollama
-            ollama_ready = self.setup_ollama()
+            # 4. Установка Ollama
+            ollama_installed = self.install_ollama()
+            if not ollama_installed:
+                self.logger.warning("⚠️ Ollama не установлен автоматически")
+                self.logger.info("Установите Ollama вручную с https://ollama.com")
+                return False
             
-            # 5. Настройка модели
+            # 5. Ожидание запуска службы Ollama
+            if not self.wait_for_ollama_service():
+                self.logger.warning("⚠️ Служба Ollama не запустилась автоматически")
+                self.logger.info("Запустите Ollama вручную и повторите установку")
+                return False
+            
+            # 6. Настройка модели
             model_ready = self.setup_local_model()
+            if not model_ready:
+                self.logger.warning("⚠️ Не удалось настроить локальную модель")
+                return False
             
             self.logger.info("=" * 50)
-            
-            if ollama_ready and model_ready:
-                self.logger.info("🎉 Установка завершена! Запустите: python main.py")
-                return True
-            else:
-                self.logger.warning("⚠️ Установка завершена с предупреждениями")
-                self.logger.info("Для работы необходим Ollama и модель Llama")
-                return False
+            self.logger.info("🎉 Установка завершена успешно!")
+            return True
                 
         except Exception as e:
             self.logger.error(f"❌ Ошибка установки: {e}")
             return False
 
 def main():
-    print("🤖 Установщик Nicole - Автономная версия")
+    print("🤖 Установщик Nicole - Полностью автономная версия")
+    print("=" * 50)
+    print("Этот установщик:")
+    print("  • Установит Python зависимости оффлайн")
+    print("  • Установит Ollama")
+    print("  • Настроит локальную модель")
+    print("  • Создаст все необходимые директории")
     print("=" * 50)
     
     installer = NicoleInstaller()
@@ -197,7 +415,9 @@ def main():
     
     if success:
         print("\n✅ Установка завершена успешно!")
-        print("Запустите проект: python main.py")
+        print("Запустите проект:")
+        print("  Windows: run.bat")
+        print("  Linux/Mac: ./run.sh")
     else:
         print("\n❌ Установка завершена с ошибками")
         print("Проверьте файл install.log для деталей")
