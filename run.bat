@@ -2,38 +2,64 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-echo 🤖 Запуск Nicole - Полностью автономная версия
-echo ================================================
+echo 🤖 Запуск системы Kyara...
 
-:: ВСЕГДА используем portable Python если он существует
-set PORTABLE_PYTHON=bin\python\windows\python.exe
-
-if exist "!PORTABLE_PYTHON!" (
-    echo ✅ Используется Portable Python 3.11
-    set PYTHON_CMD=!PORTABLE_PYTHON!
-) else (
-    echo ❌ Portable Python не найден в bin\python\windows\
-    echo Убедитесь что архив распакован полностью
+:: Check if we're in the right directory
+if not exist "main.py" (
+    echo ❌ Ошибка: Запускайте скрипт из корневой директории проекта
     pause
     exit /b 1
 )
 
-:: Проверяем зависимости в portable Python
-echo 📦 Проверка зависимостей...
-!PYTHON_CMD! -c "import requests, yaml, logging" >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ⚠️ Зависимости не установлены, устанавливаю...
-    !PYTHON_CMD! -m pip install --no-index --find-links=dependencies -r requirements-offline.txt
-    if !errorlevel! neq 0 (
-        echo ❌ Ошибка установки зависимостей
-        echo Проверьте папку dependencies/
+:: Function to check Python
+set PYTHON_PATH=
+if exist "venv\Scripts\python.exe" (
+    set PYTHON_PATH=venv\Scripts\python.exe
+    echo ✅ Локальный Python найден
+) else if exist "python\local\python.exe" (
+    set PYTHON_PATH=python\local\python.exe
+    echo ✅ Установленный Python найден
+)
+
+:: Check dependencies
+if defined PYTHON_PATH (
+    %PYTHON_PATH% -c "import requests, yaml, json, os" >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo ✅ Зависимости установлены
+    ) else (
+        goto :install
+    )
+) else (
+    goto :install
+)
+
+:: Check Ollama
+curl -s http://localhost:11434/api/tags >nul 2>&1
+if !errorlevel! equ 0 (
+    echo ✅ Ollama запущен
+    echo 🚀 Запуск main.py...
+    %PYTHON_PATH% main.py
+    goto :end
+) else (
+    echo ⚠️ Ollama не запущен
+    goto :install
+)
+
+:install
+echo 🔧 Запуск установщика...
+if defined PYTHON_PATH (
+    %PYTHON_PATH% install.py
+) else (
+    :: Try to find system Python
+    where python >nul 2>&1
+    if !errorlevel! equ 0 (
+        python install.py
+    ) else (
+        echo ❌ Python не найден. Запустите установку вручную:
+        echo python install.py
         pause
-        exit /b 1
     )
 )
 
-:: Запуск основной программы
-echo 🚀 Запуск Nicole...
-!PYTHON_CMD! main.py
-
+:end
 pause
