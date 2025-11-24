@@ -7,6 +7,30 @@
     Распакуйте в любую папку
 
     Запустите run.bat (Windows) или run.sh (Linux/Mac)
+	(текущая работает только на линукс!)
+
+	(убедитесь что у вас установлена утилита curl, она нужна для установки^
+
+	Ubuntu/Debian:
+
+    		Обновите список пакетов: sudo apt update
+
+    		Установите curl: sudo apt install curl
+
+	RHEL, CentOS, Rocky Linux:
+
+    		Для версий 7 и ниже используйте: sudo yum install curl
+
+    		Для версий 8 и новее используйте: sudo dnf install curl
+
+	Fedora:
+
+    		Установите пакет: sudo dnf install curl
+
+	Arch Linux и производные (Manjaro):
+
+    		Установите пакет: sudo pacman -S curl)
+
 
     Готово! Проект сам всё установит и запустит
 
